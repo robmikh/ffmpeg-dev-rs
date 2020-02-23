@@ -429,7 +429,7 @@ fn build() {
                 .rustfmt_bindings(true)
                 .detect_include_paths(true)
                 .generate_comments(true)
-                .whitelist_function("av_.*")
+                .whitelist_function("av.*")
                 .whitelist_type("AV.*")
                 .generate()
                 .expect("Unable to generate bindings")
