@@ -431,6 +431,8 @@ fn build() {
                 .generate_comments(true)
                 .whitelist_function("av.*")
                 .whitelist_type("AV.*")
+                .whitelist_function("sws.*")
+                .whitelist_type("Sws.*")
                 .generate()
                 .expect("Unable to generate bindings")
                 .write_to_file(out_path.join(gen_file_name))
