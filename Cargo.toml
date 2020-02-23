@@ -18,6 +18,7 @@ num_cpus = "1.11.1"
 [build-dependencies]
 tar = "0.4.26"
 flate2 = "1.0.12"
-bindgen = "0.51"
+bindgen = "0.53.1"
 num_cpus = "1.11.1"
 cc = "1.0.46"
+vcpkg = "0.2.8"

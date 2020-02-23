@@ -7,7 +7,8 @@ use std::path::{PathBuf, Path};
 use std::string::ToString;
 use tar::Archive;
 use flate2::read::GzDecoder;
-
+use std::process::{Command, Stdio};
+use std::io::Write;
 
 ///////////////////////////////////////////////////////////////////////////////
 // UTILS - ENVIROMENT
@@ -215,8 +216,13 @@ fn build() {
     if has_env_var_with_value("FFDEV1", "1") {
         skip_build = false;
     }
+    // TODO: Build with vcpkg
+    #[cfg(target_os = "windows")]
+    let skip_build = true;
+
     // EXTRACT
     if !source_path.exists() || !skip_build {
+        #[cfg(not(target_os = "windows"))]
         {
             let result = std::process::Command::new("tar")
                 .arg("-xJf")
@@ -226,6 +232,42 @@ fn build() {
                 .output()
                 .expect("tar decompression of ffmpeg source repo using xz (to fit the 10M crates limit)");
             assert!(result.status.success());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let mut result = std::process::Command::new("7z")
+                .arg("x")
+                .arg("-so")
+                .arg("archive/FFmpeg-FFmpeg-2722fc2.tar.xz")
+                .stdout(std::process::Stdio::piped())
+                .output()
+                .expect("tar decompression of ffmpeg source repo using xz (to fit the 10M crates limit)");
+            assert!(result.status.success());
+            let mut child = std::process::Command::new("7z")
+                .arg("x")
+                .arg("-si")
+                .arg("-ttar")
+                .arg(format!("-o{}", out_path.to_str().expect("PathBuf to str")))
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            eprintln!("{:?}", out_path.to_str());
+            {
+                let stdin = child.stdin.as_mut().unwrap();
+                stdin.write_all(&result.stdout).expect("Failed to write to stdin!");
+            }
+            let result = child.wait_with_output().unwrap();
+            assert!(result.status.success());
+
+            // copy needed files over 
+            std::fs::copy(
+                "D:\\Robert\\repos\\vcpkg\\installed\\x64-windows-static\\include\\libavutil\\avconfig.h",
+                source_path.join("libavutil\\avconfig.h")
+            ).unwrap();
+            std::fs::copy(
+                "D:\\Robert\\repos\\vcpkg\\installed\\x64-windows-static\\extra\\config.h",
+                source_path.join("config.h")
+            ).unwrap();
         }
         assert!(source_path.exists());  
     }
@@ -304,11 +346,25 @@ fn build() {
     }
     // LINK
     println!("cargo:rustc-link-search=native={}", source_path.to_str().expect("PathBuf to str"));
-    for path in SEARCH_PATHS {
-        println!("cargo:rustc-link-search=native={}", {
-            source_path.join(path).to_str().expect("PathBuf as str")
-        });
+    #[cfg(not(target_os = "windows"))]
+    {
+        for path in SEARCH_PATHS {
+            println!("cargo:rustc-link-search=native={}", {
+                source_path.join(path).to_str().expect("PathBuf as str")
+            });
+        }
     }
+    #[cfg(target_os = "windows")]
+    {
+        println!("cargo:rustc-link-search=native={}", "D:\\Robert\\repos\\vcpkg\\installed\\x64-windows-static\\lib");
+        println!("cargo:rustc-link-search=static={}", "D:\\Robert\\repos\\vcpkg\\installed\\x64-windows-static\\lib");
+        
+        println!("cargo:rustc-link-lib={}", "Bcrypt");
+        println!("cargo:rustc-link-lib={}", "Secur32");
+        println!("cargo:rustc-link-lib={}", "Ole32");
+        println!("cargo:rustc-link-lib={}", "User32");
+    }
+    
     for (name, _) in STATIC_LIBS {
         println!("cargo:rustc-link-lib=static={}", name);
     }
@@ -359,6 +415,10 @@ fn build() {
                         codegen.header(path)
                     }
                 });
+            #[cfg(target_os = "windows")]
+            let codegen = {
+                codegen.clang_arg(format!("-isystem{}", source_path.join("compat").join("atomics").join("win32").to_str().unwrap()))
+            };
             if !missing.is_empty() {
                 panic!("missing headers: {:#?}", missing);
             }
@@ -369,6 +429,8 @@ fn build() {
                 .rustfmt_bindings(true)
                 .detect_include_paths(true)
                 .generate_comments(true)
+                .whitelist_function("av_.*")
+                .whitelist_type("AV.*")
                 .generate()
                 .expect("Unable to generate bindings")
                 .write_to_file(out_path.join(gen_file_name))
